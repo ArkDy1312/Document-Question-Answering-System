@@ -1,0 +1,42 @@
+# --- Stage 1: Document ingestion ---
+pymupdf
+pymongo
+sentence-transformers
+spacy
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0.tar.gz
+
+# --- Stage 2: LangChain RAG + FastAPI ---
+langchain
+langchain-community
+langchain-huggingface
+langgraph
+faiss-cpu
+fastapi
+uvicorn[standard]
+transformers
+torch
+huggingface_hub[hf_xet]
+protobuf
+sentencepiece
+
+# --- Gradio Frontend ---
+gradio
+
+# --- JWT Auth ---
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+
+# --- Testing ---
+pytest
+httpx
+
+
+# --- Observability ---
+prometheus-fastapi-instrumentator
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation
+opentelemetry-exporter-otlp
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-requests

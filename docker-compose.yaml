@@ -1,0 +1,95 @@
+services:
+  mongo:
+    image: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  mongo-express:
+    image: mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: secret
+    depends_on:
+      - mongo
+
+  ingest:
+    build: .
+    image: doc_qa:latest
+    volumes:
+      - .:/app
+    environment:
+      - MONGO_HOST=mongo
+      - MONGO_PORT=27017
+    depends_on:
+      - mongo
+    command: python main.py
+
+  api:
+    image: doc_qa:latest
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_HOST=mongo
+      - MONGO_PORT=27017
+    depends_on:
+      - mongo
+    command: uvicorn api_main:app --host 0.0.0.0 --port 8000 --reload
+
+  gradio-ui:
+    image: doc_qa:latest
+    volumes:
+      - .:/app
+    ports:
+      - "7860:7860"
+    depends_on:
+      - api
+    environment:
+      - API_URL=http://api:8000/ask
+    command: python app/ui/gradio_app.py
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - api
+
+  # grafana:
+  #   image: grafana/grafana
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+  #   depends_on:
+  #     - prometheus
+
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib:latest
+  #   command: ["--config=/etc/otel-collector-config.yaml"]
+  #   volumes:
+  #     - ./monitoring/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+  #   ports:
+  #     - "4318:4318"  # OTLP HTTP receiver
+  #   depends_on:
+  #     - api
+
+  # tempo:
+  #   image: grafana/tempo:latest
+  #   command: [ "-config.file=/etc/tempo.yaml" ]
+  #   ports:
+  #     - "3200:3200"     # Tempo API
+  #   volumes:
+  #     - ./monitoring/tempo.yaml:/etc/tempo.yaml
+
+volumes:
+  mongo-data:
