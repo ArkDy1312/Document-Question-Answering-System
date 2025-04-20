@@ -18,6 +18,16 @@ services:
     depends_on:
       - mongo
 
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.44.0
+    container_name: mongodb-exporter
+    ports:
+      - "9216:9216"
+    environment:
+      MONGODB_URI: "mongodb://mongo:27017"
+    depends_on:
+      - mongo
+
   ingest:
     build: .
     image: doc_qa:latest
@@ -39,8 +49,10 @@ services:
     environment:
       - MONGO_HOST=mongo
       - MONGO_PORT=27017
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
     depends_on:
       - mongo
+      - otel-collector
     command: uvicorn api_main:app --host 0.0.0.0 --port 8000 --reload
 
   gradio-ui:
@@ -64,32 +76,47 @@ services:
     depends_on:
       - api
 
-  # grafana:
-  #   image: grafana/grafana
-  #   ports:
-  #     - "3000:3000"
-  #   volumes:
-  #     - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
-  #   depends_on:
-  #     - prometheus
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
 
-  # otel-collector:
-  #   image: otel/opentelemetry-collector-contrib:latest
-  #   command: ["--config=/etc/otel-collector-config.yaml"]
-  #   volumes:
-  #     - ./monitoring/otel-collector-config.yaml:/etc/otel-collector-config.yaml
-  #   ports:
-  #     - "4318:4318"  # OTLP HTTP receiver
-  #   depends_on:
-  #     - api
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./monitoring/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"  # OTLP grpc receiver
+    depends_on:
+      - tempo
 
-  # tempo:
-  #   image: grafana/tempo:latest
-  #   command: [ "-config.file=/etc/tempo.yaml" ]
-  #   ports:
-  #     - "3200:3200"     # Tempo API
-  #   volumes:
-  #     - ./monitoring/tempo.yaml:/etc/tempo.yaml
+  tempo:
+    image: grafana/tempo:latest
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    ports:
+      - "3200:3200"     # Tempo API
+    volumes:
+      - ./monitoring/tempo.yaml:/etc/tempo.yaml
+
+  admin-dashboard:
+    image: doc_qa:latest
+    volumes:
+      - .:/app
+    ports:
+      - "7861:7861"
+    depends_on:
+      - api
+      - prometheus
+    environment:
+      - API_URL=http://api:8000/ask
+      - PROMETHEUS_API=http://prometheus:9090/api/v1/query
+    command: python app/ui/admin_dashboard.py
 
 volumes:
   mongo-data:
