@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 import os
 from app.api.routes import router as main_router
-from app.api.auth import auth_router
+from app.api.auth_routes import router as auth_router
 from prometheus_fastapi_instrumentator import Instrumentator
 # 🚀 Add OpenTelemetry FastAPI auto-instrumentation
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor

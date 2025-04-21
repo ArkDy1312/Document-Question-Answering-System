@@ -10,7 +10,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from langchain.callbacks import StdOutCallbackHandler
 from app.monitoring.otel_callback import OpenTelemetryCallback
 import time
-from app.ingest.mongodb_utils import log_query
+from app.db.mongo import log_query
 
 
 qa_requests_total = Counter("qa_requests_total", "Total number of QA requests")

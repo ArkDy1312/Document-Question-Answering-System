@@ -36,6 +36,10 @@ services:
     environment:
       - MONGO_HOST=mongo
       - MONGO_PORT=27017
+      - MONGO_DEFAULT_ADMIN_USERNAME=admin
+      - MONGO_DEFAULT_ADMIN_PASSWORD=admin123
+      - TRANSFORMERS_CACHE=/app/huggingface
+      - HF_HOME=/app/huggingface
     depends_on:
       - mongo
     command: python main.py
@@ -49,10 +53,13 @@ services:
     environment:
       - MONGO_HOST=mongo
       - MONGO_PORT=27017
+      - MONGO_DEFAULT_ADMIN_USERNAME=admin
+      - MONGO_DEFAULT_ADMIN_PASSWORD=admin123
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - TRANSFORMERS_CACHE=/app/huggingface
+      - HF_HOME=/app/huggingface
     depends_on:
-      - mongo
-      - otel-collector
+      - ingest
     command: uvicorn api_main:app --host 0.0.0.0 --port 8000 --reload
 
   gradio-ui:
@@ -64,8 +71,9 @@ services:
     depends_on:
       - api
     environment:
-      - API_URL=http://api:8000/ask
+      - API_BASE=http://api:8000
     command: python app/ui/gradio_app.py
+
 
   prometheus:
     image: prom/prometheus
@@ -84,6 +92,8 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
+      - mongo
+      - api
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
@@ -95,6 +105,7 @@ services:
       - "4317:4317"  # OTLP grpc receiver
     depends_on:
       - tempo
+      - mongo
 
   tempo:
     image: grafana/tempo:latest
@@ -103,20 +114,28 @@ services:
       - "3200:3200"     # Tempo API
     volumes:
       - ./monitoring/tempo.yaml:/etc/tempo.yaml
-
-  admin-dashboard:
-    image: doc_qa:latest
-    volumes:
-      - .:/app
-    ports:
-      - "7861:7861"
     depends_on:
+      - mongo
       - api
-      - prometheus
+
+  airflow:
+    image: apache/airflow:2.7.3-python3.10
+    restart: always
     environment:
-      - API_URL=http://api:8000/ask
-      - PROMETHEUS_API=http://prometheus:9090/api/v1/query
-    command: python app/ui/admin_dashboard.py
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__FERNET_KEY=1234
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    ports:
+      - "8080:8080"
+    command: standalone
+    depends_on:
+      - mongo
+      - api
+
 
 volumes:
   mongo-data:
