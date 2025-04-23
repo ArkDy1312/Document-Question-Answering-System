@@ -4,6 +4,8 @@ import os
 import matplotlib.pyplot as plt
 import time
 import threading
+import shutil
+import uuid
 
 base_api = os.getenv("API_BASE", "http://localhost:8000")
 chat_history = {}
@@ -15,6 +17,9 @@ gr.Markdown("""
 .latency-green input { background-color: #ccffcc; color: black; font-weight: bold; }
 </style>
 """)
+
+def generate_session_id():
+    return uuid.uuid4().hex
 
 ### --- AUTH HELPERS --- ###
 def authenticate(endpoint, username, password):
@@ -29,10 +34,27 @@ def login_user(username, password): return authenticate("login", username, passw
 def login_admin(username, password): return authenticate("admin-login", username, password)
 
 ### --- USER LOGIC --- ###
-def ask_question(session_id, question, token):
+def ask_question(username, session_id, question, token, files):
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        r = requests.post(f"{base_api}/ask", json={"session_id": session_id, "question": question}, headers=headers)
+        if files is not None:
+            print(f"Files exists: {files}")
+            for f in files:
+                with open(f.name, "rb") as file_obj:
+                    files_payload = {'file': (os.path.basename(f.name), file_obj)}
+                    data = {'session_id': session_id, 
+                            'username': username}
+                    # Your backend should accept file upload and handle embedding/indexing
+                    response = requests.post(f"{base_api}/store", files=files_payload, data=data, headers=headers)
+                    if response.status_code != 200:
+                        return f"❌ Error uploading {f.name}: {response.text}"
+                    print(f"Response: {response.json()}")
+
+            r = requests.post(f"{base_api}/ask", json={'username': username, "session_id": session_id, "question": question, 
+                                                    "upload_dir": response.json().get("upload_dir", None)}, headers=headers)
+        else:
+            r = requests.post(f"{base_api}/ask", json={'username': username, "session_id": session_id, "question": question, 
+                                                       "upload_dir": None}, headers=headers)
         return r.json().get("answer", "No answer returned")
     except Exception as e:
         return f"❌ Error: {e}"
@@ -75,9 +97,17 @@ def fetch_failure_count(token):
     except:
         return "❌"
 
-def logout(token):
+def logout(token, session_id = None, username = None):
     try:
-        requests.post(f"{base_api}/logout", headers={"Authorization": f"Bearer {token}"})
+        if session_id is not None:
+            # Invalidate the session ID
+            requests.post(f"{base_api}/logout", 
+                          data={"session_id": session_id},
+                          headers={"Authorization": f"Bearer {token}"})
+            shutil.rmtree(f"data/temp_{username}")
+        else:
+            requests.post(f"{base_api}/logout",
+                          headers={"Authorization": f"Bearer {token}"})
     except:
         pass
     return "", "", "", "👋 Logged out", *show_login_ui()
@@ -90,13 +120,17 @@ def show_login_ui(): return gr.update(visible=False), gr.update(visible=False), 
 def handle_user_login(username, password):
     token, error = login_user(username, password)
     if token:
-        return token, "user", username, f"✅ Welcome, {username}", *show_user_ui()
+        # Generate a new session ID for the user
+        new_session_id = generate_session_id()
+        return token, "user", username, f"✅ Welcome, {username}", new_session_id, new_session_id, *show_user_ui()
     return "", "", "", f"❌ {error}", *show_login_ui()
 
 def handle_signup(username, password):
     token, error = signup_user(username, password)
     if token:
-        return token, "user", username, f"✅ Account created for {username}", *show_user_ui()
+        # Generate a new session ID for the user
+        new_session_id = generate_session_id()
+        return token, "user", username, f"✅ Account created for {username}", new_session_id, new_session_id, *show_user_ui()
     return "", "", "", f"❌ {error}", *show_login_ui()
 
 def handle_admin_login(username, password):
@@ -105,19 +139,23 @@ def handle_admin_login(username, password):
         return token, "admin", username, f"✅ Welcome Admin {username}", *show_admin_ui()
     return "", "", "", f"❌ {error}", *show_login_ui()
 
+
 ### --- BUILD UI --- ###
 with gr.Blocks(title="Document QA Platform") as app:
     token = gr.State("")
     role = gr.State("")
     username = gr.State("")
+    session_id = gr.State("")  # Session ID state
 
     # --- USER PANEL ---
     with gr.Group(visible=False) as user_panel:
         gr.Markdown("### 🧠 Ask a Question")
-        session_id = gr.Textbox(label="Session ID")
+        session_id_box = gr.Textbox(label="Session ID", interactive=False)
         question = gr.Textbox(label="Your Question")
         answer_output = gr.Textbox(label="Answer", interactive=False)
         ask_btn = gr.Button("Ask")
+        # --- For uploads ---
+        upload_files = gr.Files(label="", file_count="multiple", type="file")
         logout_btn1 = gr.Button("Logout")
 
     # --- ADMIN PANEL ---
@@ -151,13 +189,11 @@ with gr.Blocks(title="Document QA Platform") as app:
         login_output = gr.Textbox(label="Status", interactive=False)
 
     # --- Bindings ---
-    ask_btn.click(fn=ask_question, inputs=[session_id, question, token], outputs=answer_output)
+    ask_btn.click(fn=ask_question, inputs=[username, session_id, question, token, upload_files], outputs=answer_output)
 
-    login_btn.click(fn=handle_user_login, inputs=[user, pwd],
-                    outputs=[token, role, username, login_output, user_panel, admin_panel, login_panel])
+    login_btn.click(fn=handle_user_login, inputs=[user, pwd], outputs=[token, role, username, login_output, session_id_box, session_id, user_panel, admin_panel, login_panel])
 
-    signup_btn.click(fn=handle_signup, inputs=[user, pwd],
-                     outputs=[token, role, username, login_output, user_panel, admin_panel, login_panel])
+    signup_btn.click(fn=handle_signup, inputs=[user, pwd], outputs=[token, role, username, login_output, session_id_box, session_id, user_panel, admin_panel, login_panel])
 
     admin_login_btn.click(fn=handle_admin_login, inputs=[user, pwd],
                           outputs=[token, role, username, login_output, user_panel, admin_panel, login_panel])
@@ -168,7 +204,7 @@ with gr.Blocks(title="Document QA Platform") as app:
         outputs=[total_card, today_card, avg_latency_card, top_chart, failure_card]
     )
 
-    logout_btn1.click(fn=logout, inputs=[token], outputs=[token, role, username, login_output, user_panel, admin_panel, login_panel])
+    logout_btn1.click(fn=logout, inputs=[token, session_id, username], outputs=[token, role, username, login_output, user_panel, admin_panel, login_panel])
     logout_btn2.click(fn=logout, inputs=[token], outputs=[token, role, username, login_output, user_panel, admin_panel, login_panel])
 
 ### --- BACKGROUND AUTO REFRESH THREAD --- ###

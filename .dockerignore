@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+
+# Ignore local Huggingface cache
+huggingface/models--BAAI--bge-base-en
+huggingface/models--dslim--bert-base-NER
+huggingface/models--teapotai--teapotllm

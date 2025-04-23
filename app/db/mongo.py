@@ -5,6 +5,7 @@ from prometheus_client import Counter
 from datetime import datetime
 from langchain_core.messages import BaseMessage
 from langchain_core.documents import Document
+from bson.binary import Binary
 from app.auth.security import hash_password
 
 # Use 'mongo' — the service name in docker-compose.yml
@@ -16,6 +17,7 @@ client = MongoClient(f"mongodb://{mongo_host}:{mongo_port}/")
 
 db = client["doc_qa"]
 collection = db["documents"]
+users_docs_collection = db["user_documents"]
 logs = db["logs"]
 users_collection = db["users"]
 admins_collection = db["admins"]
@@ -42,18 +44,29 @@ if not admins_collection.find_one({"username": DEFAULT_ADMIN_USERNAME}):
 else:
     print(f"[BOOTSTRAP] 🟢 Admin user '{DEFAULT_ADMIN_USERNAME}' already exists.")
 
-def save_metadata(filename, chunks, entities=None):
-    doc = {
+def save_metadata(filename, chunks, entities=None, username=None, session_id=None, upload_time=None):
+    if username and session_id:
+        doc = {
         "filename": filename,
-        "chunks": chunks,
-        "entities": entities or [],
-    }
-    collection.insert_one(doc)
+        "username": username,
+        "session_id": session_id,
+        "upload_time": upload_time,
+        }
+        users_docs_collection.insert_one(doc)
+    else:
+        doc = {
+            "filename": filename,
+            "chunks": chunks,
+            "entities": entities or [],
+        }
+        collection.insert_one(doc)
+    
+    # Increment the document count
     mongo_docs_saved.inc()
     if entities:
         mongo_entities_saved.inc(len(entities))
 
-def log_query(session_id, question, answer, trace_id, latency_ms):
+def log_query(username, session_id, question, answer, trace_id, latency_ms):
     def serialize_message(msg: BaseMessage):
         return {
             "type": msg.__class__.__name__,
@@ -74,6 +87,7 @@ def log_query(session_id, question, answer, trace_id, latency_ms):
     }
 
     log_entry = {
+        "username": username,
         "session_id": session_id,
         "question": question,
         "answer": serialized_answer,

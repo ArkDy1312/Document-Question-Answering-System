@@ -22,5 +22,5 @@ def save_to_faiss(chunks, faiss_dir="data/faiss"):
         faiss_dir (str): Directory to save the FAISS index.
     """
     # Create FAISS vector store
-    vectorstore = FAISS.from_texts(chunks, embedding=embedder)
+    vectorstore = FAISS.from_texts(chunks, embedding=embedder) 
     vectorstore.save_local(faiss_dir)
